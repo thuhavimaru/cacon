@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hồ Cá Thông Minh</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #0f1b2e; color: white; margin: 0; padding: 20px; }
+    .container { max-width: 1000px; margin: auto; }
+    .card { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 15px; margin: 15px 0; }
+    .big { font-size: 48px; text-align: center; }
+    button { padding: 15px 30px; font-size: 18px; margin: 10px; border: none; border-radius: 10px; cursor: pointer; }
+    .on { background: #00ff00; }
+    .off { background: #ff4444; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1 style="text-align:center">HỒ CÁ THÔNG MINH - REALTIME</h1>
+  
+  <div class="card">
+    <h2>Mực nước: <span id="distance" class="big">---</span> mm</h2>
+    <p>Cá phát hiện: <span id="fish">Không</span></p>
+    <p>Nhiệt độ: <span id="temp">---</span>°C</p>
+  </div>
+
+  <div class="card" style="text-align:center">
+    <button id="btnAuto" class="on">AUTO MODE: ON</button><br/>
+    <button id="btnPump" class="off">BƠM: OFF</button>
+    <button id="btnLight" class="off">ĐÈN: OFF</button>
+  </div>
+
+  <div class="card">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+const client = mqtt.connect('ws://cacon.onrender.com:8080');// Thay tên của bạn
+
+  const distanceEl = document.getElementById('distance');
+  const fishEl = document.getElementById('fish');
+  const tempEl = document.getElementById('temp');
+  const btnAuto = document.getElementById('btnAuto');
+  const btnPump = document.getElementById('btnPump');
+  const btnLight = document.getElementById('btnLight');
+
+  const ctx = document.getElementById('chart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'Mực nước (mm)', data: [], borderColor: '#00ffff' }] },
+    options: { responsive: true }
+  });
+
+  client.on('connect', () => {
+    console.log('Đã kết nối MQTT Web');
+    client.subscribe('fish/data');
+  });
+
+  client.on('message', (topic, message) => {
+    const data = JSON.parse(message.toString());
+
+    distanceEl.innerText = data.distance_mm;
+    tempEl.innerText = data.temperature;
+    fishEl.innerText = data.fishDetected ? "CÓ CÁ" : "KHÔNG CÁ";
+    fishEl.style.color = data.fishDetected ? "#00ff00" : "#ff4444";
+
+    // Cập nhật nút
+    btnAuto.className = data.auto ? "on" : "off";
+    btnAuto.innerText = "AUTO MODE: " + (data.auto ? "ON" : "OFF");
+    btnPump.className = data.pump ? "on" : "off";
+    btnPump.innerText = "BƠM: " + (data.pump ? "ON" : "OFF");
+    btnLight.className = data.light ? "on" : "off";
+    btnLight.innerText = "ĐÈN: " + (data.light ? "ON" : "OFF");
+
+    // Chart
+    chart.data.labels.push(new Date().toLocaleTimeString());
+    chart.data.datasets[0].data.push(data.distance_mm);
+    if (chart.data.labels.length > 20) {
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.shift();
+    }
+    chart.update();
+  });
+
+  // Gửi lệnh khi nhấn nút
+  function sendCommand() {
+    const cmd = {
+      auto: btnAuto.innerText.includes("ON"),
+      pump: btnPump.innerText.includes("ON"),
+      light: btnLight.innerText.includes("ON")
+    };
+    client.publish('fish/control', JSON.stringify(cmd));
+  }
+
+  btnAuto.onclick = () => { btnAuto.innerText = btnAuto.innerText.includes("ON") ? "AUTO MODE: OFF" : "AUTO MODE: ON"; sendCommand(); };
+  btnPump.onclick = () => { if (!btnAuto.innerText.includes("ON")) { btnPump.innerText = btnPump.innerText.includes("ON") ? "BƠM: OFF" : "BƠM: ON"; sendCommand(); } };
+  btnLight.onclick = () => { if (!btnAuto.innerText.includes("ON")) { btnLight.innerText = btnLight.innerText.includes("ON") ? "ĐÈN: OFF" : "ĐÈN: ON"; sendCommand(); } };
+</script>
+</body>
+</html>
